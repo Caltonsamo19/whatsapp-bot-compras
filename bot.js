@@ -13,7 +13,21 @@ const openai = new OpenAI({
 class WhatsAppBot {
     constructor() {
         this.client = new Client({
-            authStrategy: new LocalAuth()
+            authStrategy: new LocalAuth(),
+            puppeteer: {
+                headless: true,
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--no-first-run',
+                    '--no-zygote',
+                    '--disable-gpu',
+                    '--disable-web-security',
+                    '--disable-features=VizDisplayCompositor'
+                ]
+            }
         });
 
         this.dataFile = path.join(__dirname, process.env.DATA_FILE || 'grupos_data.json');
