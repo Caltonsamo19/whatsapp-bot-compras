@@ -931,18 +931,30 @@ class WhatsAppBot {
             let inativosText = '😴 *COMPRADORES INATIVOS* 😴\n';
             inativosText += `*(Mais de 15 dias sem comprar)*\n\n`;
 
+            // Prepara lista de menções para tornar números clicáveis
+            const mentions = [];
+
             inativos.slice(0, 15).forEach((comprador, index) => {
                 const total = this.formatMegas(comprador.totalComprado);
-                inativosText += `📱 ${comprador.nome}\n`;
+                
+                // Adiciona @ antes do número para criar menção/link clicável
+                inativosText += `📱 @${comprador.phone.replace('+', '')}\n`;
                 inativosText += `   ⏰ ${comprador.diasSemComprar} dias sem comprar\n`;
                 inativosText += `   📊 Total: ${total}\n\n`;
+                
+                // Adiciona à lista de menções
+                mentions.push(`${comprador.phone.replace('+', '')}@c.us`);
             });
 
             if (inativos.length > 15) {
                 inativosText += `... e mais ${inativos.length - 15} compradores inativos.`;
             }
 
-            await message.reply(inativosText);
+            // Envia mensagem com menções para tornar números clicáveis
+            await this.client.sendMessage(groupId, inativosText, {
+                mentions: mentions
+            });
+
             this.log(`😴 Lista de inativos enviada para o grupo ${groupId}`);
 
         } catch (error) {
@@ -979,7 +991,8 @@ class WhatsAppBot {
                     semCompras.push({
                         phone: phoneNumber,
                         nome: nome,
-                        temRegisto: !!compradores[phoneNumber]
+                        temRegisto: !!compradores[phoneNumber],
+                        participantId: participant.id._serialized
                     });
                 }
             });
@@ -992,10 +1005,18 @@ class WhatsAppBot {
             let semRegistroText = '📝 *MEMBROS SEM COMPRAS* 📝\n';
             semRegistroText += `*(Membros do grupo que nunca compraram)*\n\n`;
 
+            // Prepara lista de menções para tornar números clicáveis
+            const mentions = [];
+
             semCompras.slice(0, 20).forEach((membro, index) => {
                 const status = membro.temRegisto ? '📋 Registado' : '❌ Sem registo';
-                semRegistroText += `📱 ${membro.nome}\n`;
+                
+                // Adiciona @ antes do número para criar menção/link clicável
+                semRegistroText += `📱 @${membro.phone.replace('+', '')}\n`;
                 semRegistroText += `   ${status} • 0 MB comprados\n\n`;
+                
+                // Adiciona à lista de menções
+                mentions.push(`${membro.phone.replace('+', '')}@c.us`);
             });
 
             if (semCompras.length > 20) {
@@ -1004,7 +1025,11 @@ class WhatsAppBot {
 
             semRegistroText += `\n💡 *Total sem compras:* ${semCompras.length}/${participants.length} membros`;
 
-            await message.reply(semRegistroText);
+            // Envia mensagem com menções para tornar números clicáveis
+            await this.client.sendMessage(groupId, semRegistroText, {
+                mentions: mentions
+            });
+
             this.log(`📝 Lista de membros sem registo enviada para o grupo ${groupId} - ${semCompras.length}/${participants.length} membros`);
 
         } catch (error) {
