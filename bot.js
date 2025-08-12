@@ -35,13 +35,13 @@ class WhatsAppBot {
         this.gruposData = this.loadData();
         this.pendingTransactions = this.loadPendingData();
         this.pendingCleanup = null;
-        this.pendingNumberCleanup = null; // Para limpeza de números estrangeiros
+        this.pendingNumberCleanup = null;
         
         // Sistema anti-spam
-        this.spamDetection = new Map(); // Armazena dados de spam por grupo
-        this.SPAM_THRESHOLD = 5; // Máximo de mensagens idênticas
-        this.SPAM_WINDOW = 60000; // 1 minuto em millisegundos
-        this.MIN_MESSAGE_LENGTH = 10; // Mensagens muito curtas não são consideradas spam
+        this.spamDetection = new Map();
+        this.SPAM_THRESHOLD = 5;
+        this.SPAM_WINDOW = 60000;
+        this.MIN_MESSAGE_LENGTH = 10;
 
         this.setupEventListeners();
     }
@@ -86,7 +86,6 @@ class WhatsAppBot {
         }
     }
 
-    // Obtém ou cria dados de um grupo específico
     getGrupoData(groupId) {
         if (!this.gruposData[groupId]) {
             this.gruposData[groupId] = {
@@ -102,18 +101,14 @@ class WhatsAppBot {
         return this.gruposData[groupId];
     }
 
-    // Obtém compradores de um grupo específico
     getCompradores(groupId) {
         return this.getGrupoData(groupId).compradores;
     }
 
-    // Extrai ID do grupo da mensagem
     getGroupId(message) {
-        // Se for mensagem de grupo, retorna o ID do grupo
         if (message.from.includes('@g.us')) {
             return message.from;
         }
-        // Se for mensagem privada, usa 'private' como ID
         return 'private';
     }
 
@@ -166,16 +161,11 @@ class WhatsAppBot {
         });
     }
 
-    // Verifica se um número é válido (começa com 258)
     isValidMozambiqueNumber(phoneNumber) {
-        // Remove caracteres especiais e espaços
         const cleanNumber = phoneNumber.replace(/[^\d]/g, '');
-        
-        // Verifica se começa com 258 e tem pelo menos 12 dígitos (258 + 9 dígitos)
         return cleanNumber.startsWith('258') && cleanNumber.length >= 12;
     }
 
-    // Remove números estrangeiros automaticamente quando entram no grupo
     async handleGroupJoin(notification) {
         try {
             if (notification.type !== 'add') return;
@@ -195,10 +185,8 @@ class WhatsAppBot {
         }
     }
 
-    // Remove um número estrangeiro do grupo
     async removeForeignNumber(groupId, participantId, phoneNumber, motivo) {
         try {
-            // Verifica se o bot é admin
             const chat = await this.client.getChatById(groupId);
             const botInfo = await this.client.info;
             const botParticipant = chat.participants.find(p => p.id.user === botInfo.wid.user);
@@ -208,7 +196,6 @@ class WhatsAppBot {
                 return false;
             }
 
-            // Obtém informações do usuário
             let userName = phoneNumber;
             try {
                 const contact = await this.client.getContactById(participantId);
@@ -217,10 +204,8 @@ class WhatsAppBot {
                 // Se não conseguir obter o contato, usa o número
             }
 
-            // Remove o participante
             await this.client.removeParticipant(groupId, participantId);
 
-            // Notificação de remoção
             const removalNotification = `🚫 *NÚMERO ESTRANGEIRO REMOVIDO* 🚫\n\n` +
                 `👤 **Usuário:** ${userName}\n` +
                 `📱 **Número:** +${phoneNumber}\n` +
@@ -239,23 +224,18 @@ class WhatsAppBot {
         }
     }
 
-    // Sistema de detecção de spam
     async detectSpam(message, groupId) {
         try {
-            // Só funciona em grupos
             if (groupId === 'private') return false;
 
-            // Verifica se o remetente é admin
             const chat = await this.client.getChatById(groupId);
             const senderNumber = message.author || message.from.replace('@c.us', '');
             const senderParticipant = chat.participants.find(p => p.id.user === senderNumber.replace('@c.us', ''));
             
-            // Administradores não são verificados por spam
             if (senderParticipant && senderParticipant.isAdmin) {
                 return false;
             }
 
-            // Ignora mensagens muito curtas, comandos e mensagens do sistema
             const messageText = message.body.trim();
             if (messageText.length < this.MIN_MESSAGE_LENGTH || 
                 messageText.startsWith('.') || 
@@ -263,17 +243,14 @@ class WhatsAppBot {
                 return false;
             }
 
-            // Normaliza a mensagem para comparação (remove espaços extras, converte para minúsculas)
             const normalizedMessage = messageText.toLowerCase().replace(/\s+/g, ' ').trim();
             
-            // Inicializa dados do grupo se não existir
             if (!this.spamDetection.has(groupId)) {
                 this.spamDetection.set(groupId, new Map());
             }
             
             const groupSpamData = this.spamDetection.get(groupId);
             
-            // Inicializa dados do usuário se não existir
             if (!groupSpamData.has(senderNumber)) {
                 groupSpamData.set(senderNumber, {
                     messages: [],
@@ -284,23 +261,19 @@ class WhatsAppBot {
             const userData = groupSpamData.get(senderNumber);
             const now = Date.now();
             
-            // Remove mensagens antigas (fora da janela de tempo)
             userData.messages = userData.messages.filter(msg => 
                 now - msg.timestamp < this.SPAM_WINDOW
             );
             
-            // Adiciona a nova mensagem
             userData.messages.push({
                 content: normalizedMessage,
                 timestamp: now
             });
             
-            // Conta mensagens idênticas
             const identicalMessages = userData.messages.filter(msg => 
                 msg.content === normalizedMessage
             );
             
-            // Se atingiu o limite de spam
             if (identicalMessages.length >= this.SPAM_THRESHOLD) {
                 this.log(`🚨 SPAM DETECTADO no grupo ${groupId} por ${senderNumber}: ${identicalMessages.length} mensagens idênticas`);
                 await this.handleSpamDetected(message, groupId, senderNumber, identicalMessages.length);
@@ -319,11 +292,9 @@ class WhatsAppBot {
         try {
             const chat = await this.client.getChatById(groupId);
             
-            // Obter informações do spammer
             const contact = await this.client.getContactById(`${spammerNumber}@c.us`);
             const spammerName = contact.pushname || contact.name || spammerNumber;
             
-            // Notificação sobre detecção de spam
             const spamNotification = `🚨 *SPAM DETECTADO* 🚨\n\n` +
                 `👤 **Usuário:** ${spammerName}\n` +
                 `📱 **Número:** +${spammerNumber}\n` +
@@ -334,13 +305,10 @@ class WhatsAppBot {
 
             await this.client.sendMessage(groupId, spamNotification);
             
-            // Aguarda 2 segundos para a mensagem ser enviada
             await new Promise(resolve => setTimeout(resolve, 2000));
             
-            // Fecha o grupo (apenas mensagens de admins)
             await chat.setMessagesAdminsOnly(true);
             
-            // Notificação de grupo fechado
             const closedNotification = `🔐 *GRUPO FECHADO AUTOMATICAMENTE* 🔐\n\n` +
                 `O grupo foi temporariamente fechado devido à detecção de spam.\n\n` +
                 `👨‍💼 **Administradores:** O grupo está agora restrito apenas para admins.\n` +
@@ -349,10 +317,8 @@ class WhatsAppBot {
 
             await this.client.sendMessage(groupId, closedNotification);
             
-            // Log detalhado
             this.log(`🔒 Grupo ${groupId} fechado automaticamente devido a spam de ${spammerName} (+${spammerNumber})`);
             
-            // Limpa os dados de spam para este grupo
             this.spamDetection.delete(groupId);
             
         } catch (error) {
@@ -360,63 +326,78 @@ class WhatsAppBot {
         }
     }
 
-    // Limpa dados de spam antigos (executado periodicamente)
     cleanupSpamData() {
         const now = Date.now();
         
         this.spamDetection.forEach((groupData, groupId) => {
             groupData.forEach((userData, userNumber) => {
-                // Remove mensagens antigas
                 userData.messages = userData.messages.filter(msg => 
                     now - msg.timestamp < this.SPAM_WINDOW
                 );
                 
-                // Remove usuários sem mensagens recentes
                 if (userData.messages.length === 0 && 
                     now - userData.lastCleanup > this.SPAM_WINDOW * 2) {
                     groupData.delete(userNumber);
                 }
             });
             
-            // Remove grupos vazios
             if (groupData.size === 0) {
                 this.spamDetection.delete(groupId);
             }
         });
     }
 
+    // FUNÇÃO CORRIGIDA: Apenas remove espaços extras e ponto final
+    normalizeReference(reference) {
+        if (!reference) return null;
+        
+        // Remove apenas espaços extras e ponto final (preserva maiúsculas/minúsculas e pontos internos)
+        return reference
+            .trim()
+            .replace(/\.$/, ''); // Remove apenas o ponto final
+    }
+
+    // FUNÇÃO CORRIGIDA: Extração de referência M-Pesa (preserva formato original)
     extractMpesaReference(text) {
         const patterns = [
-            /Confirmado\s+([A-Z0-9]{8,15})/i,
-            /^([A-Z0-9]{8,15})\s*\./,
-            /Referência:\s*([A-Z0-9]{8,15})/i,
-            /\b([A-Z]{2,3}\d{2}[A-Z0-9]{6,10})\b/i
+            /Confirmado\.?\s*([A-Za-z0-9]{8,15})/i,
+            /^([A-Za-z0-9]{8,15})\s*\.?\s*$/m,
+            /Referência[:\s]*([A-Za-z0-9]{8,15})/i,
+            /\b([A-Za-z]{2,3}\d{2}[A-Za-z0-9]{6,10})\b/i,
+            /([A-Za-z0-9]{8,15})\s*\./,
+            /ID[:\s]*([A-Za-z0-9]{8,15})/i
         ];
 
         for (const pattern of patterns) {
             const match = text.match(pattern);
             if (match) {
-                let referencia = match[1].toUpperCase();
-                referencia = referencia.replace(/\.$/, '');
-                return referencia;
+                const referencia = this.normalizeReference(match[1]);
+                if (referencia && referencia.length >= 8) {
+                    return referencia;
+                }
             }
         }
         return null;
     }
 
+    // FUNÇÃO CORRIGIDA: Extração de referência eMola (preserva formato original)
     extractEmolaReference(text) {
         const patterns = [
-            /(PP\d+\.\d+\.[A-Z0-9]+)/i,
-            /Referência:\s*(PP\d+\.\d+\.[A-Z0-9]+)/i,
-            /ID da transacao[:\s]+(PP\d+\.\d+\.[A-Z0-9]+)/i
+            /(PP\d+\.?\d+\.?[A-Za-z0-9]+)/i,
+            /Referência[:\s]*(PP\d+\.?\d+\.?[A-Za-z0-9]+)/i,
+            /ID\s+da\s+transacao[:\s]+(PP\d+\.?\d+\.?[A-Za-z0-9]+)/i,
+            /ID\s+da\s+transação[:\s]+(PP\d+\.?\d+\.?[A-Za-z0-9]+)/i,
+            /transacao[:\s]+(PP\d+[\.\w]*)/i,
+            /transação[:\s]+(PP\d+[\.\w]*)/i
         ];
 
         for (const pattern of patterns) {
             const match = text.match(pattern);
             if (match) {
-                let referencia = match[1].toUpperCase();
-                referencia = referencia.replace(/\.\s*$/, '');
-                return referencia;
+                const referencia = this.normalizeReference(match[1]);
+                if (referencia && referencia.startsWith('PP')) {
+                    return referencia;
+                }
             }
         }
         return null;
@@ -445,8 +426,8 @@ class WhatsAppBot {
 
             const result = response.choices[0].message.content.trim();
             if (result !== "NAO_ENCONTRADA") {
-                // CORREÇÃO: Normaliza a referência extraída da imagem
-                return result.toUpperCase().replace(/\.$/, '');
+                // CORREÇÃO: Apenas remove ponto final, preserva formato original
+                return result.trim().replace(/\.$/, '');
             }
             return null;
         } catch (error) {
@@ -457,14 +438,20 @@ class WhatsAppBot {
 
     extractMegas(text) {
         const patterns = [
-            /Megas:\s*(\d+)\s*MB/i,
-            /(\d+)\s*MB/i
+            /Megas[:\s]*(\d+)\s*MB/i,
+            /(\d+)\s*MB/i,
+            /(\d+)\s*mb/i,
+            /quantidade[:\s]*(\d+)/i,
+            /valor[:\s]*(\d+)\s*MB/i
         ];
 
         for (const pattern of patterns) {
             const match = text.match(pattern);
             if (match) {
-                return parseInt(match[1]);
+                const megas = parseInt(match[1]);
+                if (megas > 0 && megas <= 50000) {
+                    return megas;
+                }
             }
         }
         return null;
@@ -505,7 +492,6 @@ class WhatsAppBot {
         return null;
     }
 
-    // Calcula estatísticas de compras do cliente
     getCompraStats(phoneNumber, groupId) {
         const compradores = this.getCompradores(groupId);
         const comprador = compradores[phoneNumber];
@@ -514,7 +500,6 @@ class WhatsAppBot {
         const hoje = new Date().toISOString().split('T')[0];
         const comprasHoje = comprador.historicoCompras?.[hoje]?.length || 0;
         
-        // Calcula dias desde última compra
         let diasSemComprar = 0;
         if (comprador.ultimaCompra) {
             const ultimaCompra = new Date(comprador.ultimaCompra);
@@ -529,7 +514,6 @@ class WhatsAppBot {
         };
     }
 
-    // Atualiza o contador de compras do dia
     updateDailyPurchaseCount(phoneNumber, groupId) {
         const compradores = this.getCompradores(groupId);
         const hoje = new Date().toISOString().split('T')[0];
@@ -550,7 +534,6 @@ class WhatsAppBot {
         return compradores[phoneNumber].historicoCompras[hoje].length;
     }
 
-    // Calcula dias desde a última compra
     getDaysSinceLastPurchase(phoneNumber, groupId) {
         const compradores = this.getCompradores(groupId);
         const comprador = compradores[phoneNumber];
@@ -558,14 +541,13 @@ class WhatsAppBot {
 
         const ultimaCompra = new Date(comprador.ultimaCompra);
         const hoje = new Date();
-        hoje.setHours(0, 0, 0, 0); // Define para início do dia atual
-        ultimaCompra.setHours(0, 0, 0, 0); // Define para início do dia da última compra
+        hoje.setHours(0, 0, 0, 0);
+        ultimaCompra.setHours(0, 0, 0, 0);
         
         const diffTime = hoje - ultimaCompra;
         return Math.floor(diffTime / (1000 * 60 * 60 * 24));
     }
 
-    // Gera números ordinais em português
     getOrdinalNumber(number) {
         if (number === 1) return '1ª';
         if (number === 2) return '2ª';
@@ -578,15 +560,12 @@ class WhatsAppBot {
         const megasFormatted = this.formatMegas(megasAdicionados);
         const totalFormatted = this.formatMegas(totalMegas);
         
-        // Verifica se o cliente não comprava há dias
         const diasSemComprar = this.getDaysSinceLastPurchase(phoneNumber, groupId);
         
         let baseMessage;
         if (diasSemComprar >= 2) {
-            // Cliente que não comprava há dias
             baseMessage = `🎉 Obrigado, @${cleanNumber}, Há ${diasSemComprar} dias que você não comprava, bom tê-lo de volta! Foram adicionados ${megasFormatted}, totalizando ${totalFormatted} comprados.`;
         } else {
-            // Cliente com compras regulares
             const comprasHoje = this.updateDailyPurchaseCount(phoneNumber, groupId);
             const numeroOrdinal = this.getOrdinalNumber(comprasHoje);
             baseMessage = `🎉 Obrigado, @${cleanNumber}, Você está fazendo a sua ${numeroOrdinal} compra do dia! Foram adicionados ${megasFormatted}, totalizando ${totalFormatted} comprados.`;
@@ -648,8 +627,8 @@ class WhatsAppBot {
             }
 
             if (referencia) {
-                // CORREÇÃO: Normaliza a referência para maiúsculas
-                const referenciaKey = referencia.toUpperCase();
+                // CORREÇÃO: Usa a função de normalização corrigida
+                const referenciaKey = this.normalizeReference(referencia);
                 
                 this.pendingTransactions[referenciaKey] = {
                     sender: sender,
@@ -657,10 +636,13 @@ class WhatsAppBot {
                     timestamp: Date.now(),
                     messageId: message.id.id,
                     groupId: groupId,
-                    originalReference: referencia // Mantém a referência original para logs
+                    originalReference: referencia
                 };
                 this.savePendingData();
                 this.log(`✅ Referência capturada: ${referencia} (normalizada: ${referenciaKey}) de ${nome} (${sender}) no grupo ${groupId}`);
+                
+                // DEBUG: Lista todas as referências pendentes
+                this.log(`📋 Referências pendentes: ${Object.keys(this.pendingTransactions).join(', ')}`);
             }
         } catch (error) {
             this.log('Erro ao processar comprovativo:', error.message);
@@ -673,54 +655,59 @@ class WhatsAppBot {
             
             let referencia = this.extractReference(text);
             
+            // TENTATIVA ADICIONAL: Busca padrões PP específicos para eMola
             if (!referencia) {
                 const ppMatches = text.match(/PP\d+[\.\w]*\d+[\.\w]*\d+/gi);
                 if (ppMatches) {
-                    referencia = ppMatches.sort((a, b) => b.length - a.length)[0].toUpperCase();
+                    referencia = ppMatches.sort((a, b) => b.length - a.length)[0];
                 }
             }
             
             if (!referencia) {
-                this.log('❌ Referência não encontrada na confirmação');
+                this.log('❌ Referência não encontrada na confirmação:', text.substring(0, 100));
                 return;
             }
 
-            // CORREÇÃO: Normaliza a referência para maiúsculas para comparação
-            const referenciaKey = referencia.toUpperCase();
+            // CORREÇÃO: Normaliza a referência
+            const referenciaKey = this.normalizeReference(referencia);
+            this.log(`🔍 Procurando referência: ${referencia} (normalizada: ${referenciaKey})`);
 
             const megas = this.extractMegas(text);
             if (!megas) {
-                this.log('❌ Quantidade de megas não encontrada na confirmação');
+                this.log('❌ Quantidade de megas não encontrada na confirmação:', text.substring(0, 100));
                 return;
             }
 
-            // CORREÇÃO: Busca pela referência normalizada
-            const pendingTransaction = this.pendingTransactions[referenciaKey];
+            // CORREÇÃO: Busca pela referência normalizada (apenas sem ponto final)
+            let pendingTransaction = this.pendingTransactions[referenciaKey];
+            
+            // Se não encontrar, tenta busca flexível (sem modificar maiúsculas/minúsculas)
             if (!pendingTransaction) {
-                // CORREÇÃO: Tenta buscar por referências similares (case-insensitive)
-                const similarKey = Object.keys(this.pendingTransactions).find(key => 
-                    key.toUpperCase() === referenciaKey
-                );
+                // Busca por referência que seja igual ignorando apenas espaços e ponto final
+                const similarKey = Object.keys(this.pendingTransactions).find(key => {
+                    const keyTrimmed = key.trim().replace(/\.$/, '');
+                    const refTrimmed = referenciaKey.trim().replace(/\.$/, '');
+                    
+                    // Verifica se são iguais (preservando maiúsculas/minúsculas)
+                    return keyTrimmed === refTrimmed;
+                });
                 
                 if (similarKey) {
-                    // Encontrou uma referência similar, usa ela
-                    const similarTransaction = this.pendingTransactions[similarKey];
+                    pendingTransaction = this.pendingTransactions[similarKey];
                     this.log(`🔄 Referência similar encontrada: ${similarKey} para confirmação ${referencia}`);
-                    
-                    // Remove a transação antiga e processa
                     delete this.pendingTransactions[similarKey];
-                    await this.processPurchase(similarTransaction, megas, message, referencia);
-                    return;
                 }
-                
+            } else {
+                // Remove a transação encontrada
+                delete this.pendingTransactions[referenciaKey];
+            }
+            
+            if (!pendingTransaction) {
                 this.log(`❌ Transação pendente não encontrada para referência: ${referencia} (normalizada: ${referenciaKey})`);
-                this.log(`📋 Referências pendentes: ${Object.keys(this.pendingTransactions).join(', ')}`);
+                this.log(`📋 Referências pendentes disponíveis: ${Object.keys(this.pendingTransactions).join(', ')}`);
                 return;
             }
 
-            // Remove a transação processada
-            delete this.pendingTransactions[referenciaKey];
-            
             // Processa a compra
             await this.processPurchase(pendingTransaction, megas, message, referencia);
 
@@ -729,7 +716,6 @@ class WhatsAppBot {
         }
     }
 
-    // NOVO MÉTODO: Processa a compra após validação
     async processPurchase(pendingTransaction, megas, message, referenciaConfirmacao) {
         try {
             const { sender, nome, groupId } = pendingTransaction;
@@ -781,7 +767,10 @@ class WhatsAppBot {
             const contact = await message.getContact();
             const senderName = contact.pushname || contact.name || '';
             
-            if (senderName.includes('AutoBot')) {
+            // CORREÇÃO: Melhora detecção de AutoBot
+            if (senderName.toLowerCase().includes('autobot') || 
+                senderName.toLowerCase().includes('bot') ||
+                message.body.includes('AutoBot')) {
                 this.log(`🤖 Ignorando mensagem do AutoBot: ${senderName}`);
                 return;
             }
@@ -791,7 +780,6 @@ class WhatsAppBot {
             // Verifica spam ANTES de processar qualquer outro conteúdo
             const isSpam = await this.detectSpam(message, groupId);
             if (isSpam) {
-                // Se spam foi detectado, para o processamento aqui
                 return;
             }
 
@@ -801,7 +789,12 @@ class WhatsAppBot {
                 return;
             }
 
-            if (message.body.includes('Transação Concluída Com Sucesso')) {
+            // CORREÇÃO: Melhora detecção de confirmação
+            if (message.body.includes('Transação Concluída Com Sucesso') ||
+                message.body.includes('Transacao Concluida Com Sucesso') ||
+                message.body.includes('transação concluída') ||
+                message.body.includes('transacao concluida')) {
+                this.log(`💰 Processando confirmação de transação: ${message.body.substring(0, 50)}...`);
                 await this.processConfirmation(message);
                 return;
             }
@@ -810,6 +803,7 @@ class WhatsAppBot {
             const hasImage = message.hasMedia;
             
             if (hasReference || hasImage) {
+                this.log(`📋 Processando possível comprovativo: hasRef=${!!hasReference}, hasImage=${hasImage}`);
                 await this.processReceipt(message);
             }
 
@@ -851,6 +845,10 @@ class WhatsAppBot {
                 case '.confirmar.numeros':
                     await this.confirmarLimpezaNumeros(message, groupId);
                     break;
+
+                case '.debug':
+                    await this.sendDebugInfo(message, groupId);
+                    break;
                 
                 default:
                     // Comando não reconhecido - não faz nada
@@ -861,12 +859,47 @@ class WhatsAppBot {
         }
     }
 
+    // NOVO: Comando de debug para verificar o estado do bot
+    async sendDebugInfo(message, groupId) {
+        try {
+            const pendingCount = Object.keys(this.pendingTransactions).length;
+            const compradores = this.getCompradores(groupId);
+            const compradoresCount = Object.keys(compradores).length;
+            
+            let debugText = `🔧 *DEBUG DO BOT* 🔧\n\n`;
+            debugText += `📊 **Estatísticas:**\n`;
+            debugText += `   • Transações pendentes: ${pendingCount}\n`;
+            debugText += `   • Compradores registados: ${compradoresCount}\n\n`;
+            
+            if (pendingCount > 0) {
+                debugText += `📋 **Referências pendentes:**\n`;
+                Object.keys(this.pendingTransactions).slice(0, 5).forEach(ref => {
+                    const transaction = this.pendingTransactions[ref];
+                    const timeAgo = Math.floor((Date.now() - transaction.timestamp) / 1000 / 60);
+                    debugText += `   • ${ref} (${transaction.nome}, ${timeAgo}min)\n`;
+                });
+                
+                if (pendingCount > 5) {
+                    debugText += `   ... e mais ${pendingCount - 5}\n`;
+                }
+            }
+            
+            debugText += `\n⏰ **Hora do sistema:** ${new Date().toLocaleString('pt-BR')}`;
+            
+            await message.reply(debugText);
+            this.log(`🔧 Debug enviado para o grupo ${groupId}`);
+
+        } catch (error) {
+            this.log('Erro ao enviar debug:', error.message);
+        }
+    }
+
     async sendRanking(message, groupId) {
         try {
             const compradores = this.getCompradores(groupId);
             const sorted = Object.entries(compradores)
                 .sort((a, b) => b[1].quantidadeTotal - a[1].quantidadeTotal)
-                .slice(0, 20); // Limita aos top 20
+                .slice(0, 20);
 
             if (sorted.length === 0) {
                 await message.reply('📊 *RANKING*\n\nAinda não há compradores registados neste grupo.');
@@ -925,24 +958,20 @@ class WhatsAppBot {
                 return;
             }
 
-            // Ordena por dias sem comprar (maior primeiro)
             inativos.sort((a, b) => b.diasSemComprar - a.diasSemComprar);
 
             let inativosText = '😴 *COMPRADORES INATIVOS* 😴\n';
             inativosText += `*(Mais de 15 dias sem comprar)*\n\n`;
 
-            // Prepara lista de menções para tornar números clicáveis
             const mentions = [];
 
             inativos.slice(0, 15).forEach((comprador, index) => {
                 const total = this.formatMegas(comprador.totalComprado);
                 
-                // Adiciona @ antes do número para criar menção/link clicável
                 inativosText += `📱 @${comprador.phone.replace('+', '')}\n`;
                 inativosText += `   ⏰ ${comprador.diasSemComprar} dias sem comprar\n`;
                 inativosText += `   📊 Total: ${total}\n\n`;
                 
-                // Adiciona à lista de menções
                 mentions.push(`${comprador.phone.replace('+', '')}@c.us`);
             });
 
@@ -950,7 +979,6 @@ class WhatsAppBot {
                 inativosText += `... e mais ${inativos.length - 15} compradores inativos.`;
             }
 
-            // Envia mensagem com menções para tornar números clicáveis
             await this.client.sendMessage(groupId, inativosText, {
                 mentions: mentions
             });
@@ -964,26 +992,21 @@ class WhatsAppBot {
 
     async sendSemRegistro(message, groupId) {
         try {
-            // Se for mensagem privada, não há membros para verificar
             if (groupId === 'private') {
                 await message.reply('📝 Este comando só funciona em grupos.');
                 return;
             }
 
-            // Obtém todos os membros do grupo
             const chat = await this.client.getChatById(groupId);
             const participants = chat.participants;
             
             const compradores = this.getCompradores(groupId);
             const semCompras = [];
 
-            // Verifica cada membro do grupo
             participants.forEach(participant => {
                 const phoneNumber = `+${participant.id.user}`;
                 
-                // Se não está na base de dados OU tem 0 compras
                 if (!compradores[phoneNumber] || compradores[phoneNumber].quantidadeTotal === 0) {
-                    // Tenta obter o nome do participante
                     const nome = participant.pushname || 
                                 compradores[phoneNumber]?.nome || 
                                 participant.id.user;
@@ -1005,17 +1028,14 @@ class WhatsAppBot {
             let semRegistroText = '📝 *MEMBROS SEM COMPRAS* 📝\n';
             semRegistroText += `*(Membros do grupo que nunca compraram)*\n\n`;
 
-            // Prepara lista de menções para tornar números clicáveis
             const mentions = [];
 
             semCompras.slice(0, 20).forEach((membro, index) => {
                 const status = membro.temRegisto ? '📋 Registado' : '❌ Sem registo';
                 
-                // Adiciona @ antes do número para criar menção/link clicável
                 semRegistroText += `📱 @${membro.phone.replace('+', '')}\n`;
                 semRegistroText += `   ${status} • 0 MB comprados\n\n`;
                 
-                // Adiciona à lista de menções
                 mentions.push(`${membro.phone.replace('+', '')}@c.us`);
             });
 
@@ -1025,7 +1045,6 @@ class WhatsAppBot {
 
             semRegistroText += `\n💡 *Total sem compras:* ${semCompras.length}/${participants.length} membros`;
 
-            // Envia mensagem com menções para tornar números clicáveis
             await this.client.sendMessage(groupId, semRegistroText, {
                 mentions: mentions
             });
@@ -1040,13 +1059,11 @@ class WhatsAppBot {
 
     async executarLimpeza(message, groupId) {
         try {
-            // Verificações de segurança
             if (groupId === 'private') {
                 await message.reply('🚫 Este comando só funciona em grupos.');
                 return;
             }
 
-            // Verifica se quem executou o comando é admin do grupo
             const chat = await this.client.getChatById(groupId);
             const senderNumber = message.author || message.from.replace('@c.us', '');
             
@@ -1057,7 +1074,6 @@ class WhatsAppBot {
                 return;
             }
 
-            // Verifica se o bot é admin
             const botInfo = await this.client.info;
             const botParticipant = chat.participants.find(p => p.id.user === botInfo.wid.user);
             
@@ -1066,7 +1082,6 @@ class WhatsAppBot {
                 return;
             }
 
-            // Obtém membros sem compras
             const participants = chat.participants;
             const compradores = this.getCompradores(groupId);
             const semCompras = [];
@@ -1074,12 +1089,10 @@ class WhatsAppBot {
             participants.forEach(participant => {
                 const phoneNumber = `+${participant.id.user}`;
                 
-                // Não remove admins nem o bot
                 if (participant.isAdmin || participant.id.user === botInfo.wid.user) {
                     return;
                 }
                 
-                // Se não está na base de dados OU tem 0 compras
                 if (!compradores[phoneNumber] || compradores[phoneNumber].quantidadeTotal === 0) {
                     semCompras.push({
                         id: participant.id._serialized,
@@ -1094,7 +1107,6 @@ class WhatsAppBot {
                 return;
             }
 
-            // Confirmação antes da limpeza
             const confirmMsg = `🧹 *CONFIRMAÇÃO DE LIMPEZA* 🧹\n\n` +
                 `⚠️ Será removido ${semCompras.length} membro(s) sem compras:\n\n` +
                 semCompras.slice(0, 10).map(m => `• ${m.nome}`).join('\n') +
@@ -1105,7 +1117,6 @@ class WhatsAppBot {
 
             await message.reply(confirmMsg);
 
-            // Armazena dados da limpeza pendente
             const currentTimestamp = Date.now();
             this.pendingCleanup = {
                 groupId: groupId,
@@ -1114,7 +1125,6 @@ class WhatsAppBot {
                 timestamp: currentTimestamp
             };
 
-            // Auto-expira em 2 minutos
             setTimeout(() => {
                 if (this.pendingCleanup && this.pendingCleanup.timestamp === currentTimestamp) {
                     this.pendingCleanup = null;
@@ -1132,13 +1142,11 @@ class WhatsAppBot {
         try {
             const senderNumber = message.author || message.from.replace('@c.us', '');
 
-            // Verifica se há limpeza pendente
             if (!this.pendingCleanup || this.pendingCleanup.groupId !== groupId) {
                 await message.reply('❌ Não há limpeza pendente para confirmar.');
                 return;
             }
 
-            // Verifica se quem confirma é quem solicitou
             if (this.pendingCleanup.requestedBy !== senderNumber) {
                 await message.reply('🚫 Apenas quem solicitou a limpeza pode confirmar.');
                 return;
@@ -1152,14 +1160,12 @@ class WhatsAppBot {
             let removidos = 0;
             let erros = 0;
 
-            // Remove membros um por um com delay
             for (const member of membersToRemove) {
                 try {
                     await this.client.removeParticipant(groupId, member.id);
                     removidos++;
                     this.log(`✅ Removido: ${member.nome} (${member.phone})`);
                     
-                    // Delay de 1 segundo entre remoções para evitar spam
                     await new Promise(resolve => setTimeout(resolve, 1000));
                     
                 } catch (error) {
@@ -1168,7 +1174,6 @@ class WhatsAppBot {
                 }
             }
 
-            // Relatório final
             const relatorio = `✅ *LIMPEZA CONCLUÍDA* ✅\n\n` +
                 `🗑️ **Removidos:** ${removidos} membro(s)\n` +
                 `❌ **Erros:** ${erros}\n` +
@@ -1184,16 +1189,13 @@ class WhatsAppBot {
         }
     }
 
-    // Comando para remover todos os números estrangeiros existentes no grupo
     async executarLimpezaNumeros(message, groupId) {
         try {
-            // Verificações de segurança
             if (groupId === 'private') {
                 await message.reply('🚫 Este comando só funciona em grupos.');
                 return;
             }
 
-            // Verifica se quem executou o comando é admin do grupo
             const chat = await this.client.getChatById(groupId);
             const senderNumber = message.author || message.from.replace('@c.us', '');
             
@@ -1204,7 +1206,6 @@ class WhatsAppBot {
                 return;
             }
 
-            // Verifica se o bot é admin
             const botInfo = await this.client.info;
             const botParticipant = chat.participants.find(p => p.id.user === botInfo.wid.user);
             
@@ -1213,19 +1214,16 @@ class WhatsAppBot {
                 return;
             }
 
-            // Obtém números estrangeiros
             const participants = chat.participants;
             const numerosEstrangeiros = [];
 
             participants.forEach(participant => {
                 const phoneNumber = participant.id.user;
                 
-                // Não remove admins nem o bot
                 if (participant.isAdmin || phoneNumber === botInfo.wid.user) {
                     return;
                 }
                 
-                // Se não é número moçambicano
                 if (!this.isValidMozambiqueNumber(phoneNumber)) {
                     numerosEstrangeiros.push({
                         id: participant.id._serialized,
@@ -1240,7 +1238,6 @@ class WhatsAppBot {
                 return;
             }
 
-            // Confirmação antes da limpeza
             const confirmMsg = `🇲🇿 *CONFIRMAÇÃO DE LIMPEZA NÚMEROS* 🇲🇿\n\n` +
                 `⚠️ Será removido ${numerosEstrangeiros.length} número(s) estrangeiro(s):\n\n` +
                 numerosEstrangeiros.slice(0, 10).map(m => `• ${m.nome} (+${m.phone})`).join('\n') +
@@ -1252,7 +1249,6 @@ class WhatsAppBot {
 
             await message.reply(confirmMsg);
 
-            // Armazena dados da limpeza pendente
             const currentTimestamp = Date.now();
             this.pendingNumberCleanup = {
                 groupId: groupId,
@@ -1261,7 +1257,6 @@ class WhatsAppBot {
                 timestamp: currentTimestamp
             };
 
-            // Auto-expira em 2 minutos
             setTimeout(() => {
                 if (this.pendingNumberCleanup && this.pendingNumberCleanup.timestamp === currentTimestamp) {
                     this.pendingNumberCleanup = null;
@@ -1279,13 +1274,11 @@ class WhatsAppBot {
         try {
             const senderNumber = message.author || message.from.replace('@c.us', '');
 
-            // Verifica se há limpeza pendente
             if (!this.pendingNumberCleanup || this.pendingNumberCleanup.groupId !== groupId) {
                 await message.reply('❌ Não há limpeza de números pendente para confirmar.');
                 return;
             }
 
-            // Verifica se quem confirma é quem solicitou
             if (this.pendingNumberCleanup.requestedBy !== senderNumber) {
                 await message.reply('🚫 Apenas quem solicitou a limpeza pode confirmar.');
                 return;
@@ -1299,14 +1292,12 @@ class WhatsAppBot {
             let removidos = 0;
             let erros = 0;
 
-            // Remove números um por um com delay
             for (const member of numbersToRemove) {
                 try {
                     await this.client.removeParticipant(groupId, member.id);
                     removidos++;
                     this.log(`✅ Removido número estrangeiro: ${member.nome} (+${member.phone})`);
                     
-                    // Delay de 1.5 segundos entre remoções
                     await new Promise(resolve => setTimeout(resolve, 1500));
                     
                 } catch (error) {
@@ -1315,7 +1306,6 @@ class WhatsAppBot {
                 }
             }
 
-            // Relatório final
             const relatorio = `✅ *LIMPEZA DE NÚMEROS CONCLUÍDA* ✅\n\n` +
                 `🗑️ **Removidos:** ${removidos} número(s) estrangeiro(s)\n` +
                 `❌ **Erros:** ${erros}\n` +
@@ -1336,13 +1326,37 @@ class WhatsAppBot {
             await this.client.initialize();
             this.log('✅ Bot iniciado com sucesso!');
             
-            // Inicia limpeza periódica de dados de spam (a cada 5 minutos)
             setInterval(() => {
                 this.cleanupSpamData();
             }, 300000);
             
+            // NOVO: Limpeza periódica de transações pendentes antigas (a cada 10 minutos)
+            setInterval(() => {
+                this.cleanupOldPendingTransactions();
+            }, 600000);
+            
         } catch (error) {
             this.log('❌ Erro ao iniciar bot:', error.message);
+        }
+    }
+
+    // NOVO: Limpeza de transações pendentes antigas (mais de 30 minutos)
+    cleanupOldPendingTransactions() {
+        const now = Date.now();
+        const maxAge = 30 * 60 * 1000; // 30 minutos
+        let cleaned = 0;
+
+        Object.keys(this.pendingTransactions).forEach(key => {
+            const transaction = this.pendingTransactions[key];
+            if (now - transaction.timestamp > maxAge) {
+                delete this.pendingTransactions[key];
+                cleaned++;
+            }
+        });
+
+        if (cleaned > 0) {
+            this.savePendingData();
+            this.log(`🧹 Limpeza automática: ${cleaned} transações pendentes antigas removidas`);
         }
     }
 
@@ -1370,9 +1384,11 @@ class WhatsAppBot {
             
             this.log(`📊 Grupos ativos: ${totalGrupos}`);
             this.log(`👥 Compradores registados: ${totalCompradores}`);
-            this.log('📋 Comandos disponíveis: .ranking, .inativos, .semregistro, .limpeza, .limpar.numeros');
+            this.log('📋 Comandos disponíveis: .ranking, .inativos, .semregistro, .limpeza, .limpar.numeros, .debug');
             this.log('🛡️ Sistema anti-spam ativo: 5 mensagens idênticas em 1 minuto');
             this.log('🇲🇿 Proteção automática: Remove números não moçambicanos (+258)');
+            this.log('🧹 Limpeza automática: Transações pendentes antigas são removidas a cada 10 minutos');
+            this.log('🔧 Sistema de referências corrigido: Preserva formato original das referências');
             
         } catch (error) {
             this.log('❌ Erro no teste do bot:', error.message);
