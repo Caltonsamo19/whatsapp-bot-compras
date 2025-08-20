@@ -347,32 +347,123 @@ class WhatsAppBot {
         });
     }
 
-    // FUNÇÃO CORRIGIDA: Apenas remove espaços extras e ponto final
+    // FUNÇÃO CORRIGIDA: Normalização que sempre ignora o último ponto
     normalizeReference(reference) {
         if (!reference) return null;
         
-        // Remove apenas espaços extras e ponto final (preserva maiúsculas/minúsculas e pontos internos)
-        return reference
+        // Remove apenas espaços extras e caracteres de controle, preserva formato original
+        let normalized = reference
             .trim()
-            .replace(/\.$/, ''); // Remove apenas o ponto final
+            .replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove caracteres invisíveis
+            .replace(/\s+/g, ' '); // Normaliza espaços múltiplos para um único
+        
+        // SEMPRE remove o último ponto, independentemente de ser único ou múltiplo
+        normalized = normalized.replace(/\.+$/, '');
+        
+        // Remove pontos apenas no início (não no fim, pois já foi tratado acima)
+        normalized = normalized.replace(/^\.+/, '');
+        
+        return normalized;
     }
 
-    // FUNÇÃO CORRIGIDA: Extração de referência M-Pesa (preserva formato original)
+    // NOVA FUNÇÃO: Teste da normalização para debug
+    testNormalization() {
+        const testCases = [
+            'ABC123.',
+            'ABC123..',
+            'ABC123...',
+            'ABC.123.',
+            'ABC.123..',
+            'ABC.123...',
+            '.ABC123.',
+            '.ABC123..',
+            '.ABC123...',
+            'ABC123',
+            'ABC.123',
+            '.ABC123',
+            'ABC123.456.',
+            'ABC123.456..',
+            'ABC123.456...'
+        ];
+        
+        this.log('🧪 TESTE DE NORMALIZAÇÃO:');
+        testCases.forEach(test => {
+            const result = this.normalizeReference(test);
+            this.log(`   "${test}" → "${result}"`);
+        });
+    }
+
+    // FUNÇÃO MELHORADA: Extração avançada de referência M-Pesa com múltiplos padrões
     extractMpesaReference(text) {
         const patterns = [
-            /Confirmado\.?\s*([A-Za-z0-9]{8,15})/i,
-            /^([A-Za-z0-9]{8,15})\s*\.?\s*$/m,
-            /Referência[:\s]*([A-Za-z0-9]{8,15})/i,
-            /\b([A-Za-z]{2,3}\d{2}[A-Za-z0-9]{6,10})\b/i,
-            /([A-Za-z0-9]{8,15})\s*\./,
-            /ID[:\s]*([A-Za-z0-9]{8,15})/i
+            // Padrão principal: "Confirmado" + referência
+            /Confirmado\.?\s*([A-Za-z0-9]{8,20})/i,
+            
+            // Padrão: "Confirmado" com espaços e caracteres especiais
+            /Confirmado[^\w]*([A-Za-z0-9]{8,20})/i,
+            
+            // Padrão: Referência isolada (linha única)
+            /^[^\w]*([A-Za-z0-9]{8,20})[^\w]*$/m,
+            
+            // Padrão: "Referência:" + código
+            /Referência[:\s]*([A-Za-z0-9]{8,20})/i,
+            /Referencia[:\s]*([A-Za-z0-9]{8,20})/i,
+            
+            // Padrão: "ID:" + código
+            /ID[:\s]*([A-Za-z0-9]{8,20})/i,
+            /Id[:\s]*([A-Za-z0-9]{8,20})/i,
+            
+            // Padrão: "Código:" + referência
+            /Código[:\s]*([A-Za-z0-9]{8,20})/i,
+            /Codigo[:\s]*([A-Za-z0-9]{8,20})/i,
+            
+            // Padrão: "Número:" + referência
+            /Número[:\s]*([A-Za-z0-9]{8,20})/i,
+            /Numero[:\s]*([A-Za-z0-9]{8,20})/i,
+            
+            // Padrão: "Transação:" + referência
+            /Transação[:\s]*([A-Za-z0-9]{8,20})/i,
+            /Transacao[:\s]*([A-Za-z0-9]{8,20})/i,
+            
+            // Padrão: Referência com formato específico (2-3 letras + 2 dígitos + alfanumérico)
+            /\b([A-Za-z]{2,4}\d{2,3}[A-Za-z0-9]{4,12})\b/i,
+            
+            // Padrão: Referência com pontos internos
+            /\b([A-Za-z0-9]{3,6}\.[A-Za-z0-9]{3,6}\.[A-Za-z0-9]{2,8})\b/i,
+            
+            // Padrão: Referência com hífens
+            /\b([A-Za-z0-9]{3,8}-[A-Za-z0-9]{3,8}-[A-Za-z0-9]{2,8})\b/i,
+            
+            // Padrão: Referência com underscores
+            /\b([A-Za-z0-9]{3,8}_[A-Za-z0-9]{3,8}_[A-Za-z0-9]{2,8})\b/i,
+            
+            // Padrão: Referência entre parênteses
+            /\(([A-Za-z0-9]{8,20})\)/i,
+            
+            // Padrão: Referência entre colchetes
+            /\[([A-Za-z0-9]{8,20})\]/i,
+            
+            // Padrão: Referência entre chaves
+            /\{([A-Za-z0-9]{8,20})\}/i,
+            
+            // Padrão: Referência após "="
+            /=([A-Za-z0-9]{8,20})/i,
+            
+            // Padrão: Referência após ">"
+            />([A-Za-z0-9]{8,20})/i,
+            
+            // Padrão: Referência após "|"
+            /\|([A-Za-z0-9]{8,20})/i,
+            
+            // Padrão: Referência isolada com contexto
+            /(?:^|\s)([A-Za-z0-9]{8,20})(?:\s|$)/m
         ];
 
         for (const pattern of patterns) {
             const match = text.match(pattern);
             if (match) {
                 const referencia = this.normalizeReference(match[1]);
-                if (referencia && referencia.length >= 8) {
+                if (referencia && this.isValidMpesaReference(referencia)) {
                     return referencia;
                 }
             }
@@ -380,27 +471,111 @@ class WhatsAppBot {
         return null;
     }
 
-    // FUNÇÃO CORRIGIDA: Extração de referência eMola (preserva formato original)
+    // FUNÇÃO MELHORADA: Extração avançada de referência eMola com múltiplos padrões
     extractEmolaReference(text) {
         const patterns = [
-            /(PP\d+\.?\d+\.?[A-Za-z0-9]+)/i,
-            /Referência[:\s]*(PP\d+\.?\d+\.?[A-Za-z0-9]+)/i,
-            /ID\s+da\s+transacao[:\s]+(PP\d+\.?\d+\.?[A-Za-z0-9]+)/i,
-            /ID\s+da\s+transação[:\s]+(PP\d+\.?\d+\.?[A-Za-z0-9]+)/i,
-            /transacao[:\s]+(PP\d+[\.\w]*)/i,
-            /transação[:\s]+(PP\d+[\.\w]*)/i
+            // Padrão principal: PP + números + alfanumérico
+            /(PP\d+[\.\-\_]?\d*[\.\-\_]?[A-Za-z0-9]*)/i,
+            
+            // Padrão: "Referência:" + PP
+            /Referência[:\s]*(PP\d+[\.\-\_]?\d*[\.\-\_]?[A-Za-z0-9]*)/i,
+            /Referencia[:\s]*(PP\d+[\.\-\_]?\d*[\.\-\_]?[A-Za-z0-9]*)/i,
+            
+            // Padrão: "ID da transação:" + PP
+            /ID\s+da\s+transacao[:\s]+(PP\d+[\.\-\_]?\d*[\.\-\_]?[A-Za-z0-9]*)/i,
+            /ID\s+da\s+transação[:\s]+(PP\d+[\.\-\_]?\d*[\.\-\_]?[A-Za-z0-9]*)/i,
+            /Id\s+da\s+transacao[:\s]+(PP\d+[\.\-\_]?\d*[\.\-\_]?[A-Za-z0-9]*)/i,
+            /Id\s+da\s+transação[:\s]+(PP\d+[\.\-\_]?\d*[\.\-\_]?[A-Za-z0-9]*)/i,
+            
+            // Padrão: "Transação:" + PP
+            /transacao[:\s]+(PP\d+[\.\-\_]?\d*[\.\-\_]?[A-Za-z0-9]*)/i,
+            /transação[:\s]+(PP\d+[\.\-\_]?\d*[\.\-\_]?[A-Za-z0-9]*)/i,
+            
+            // Padrão: "Código:" + PP
+            /Código[:\s]+(PP\d+[\.\-\_]?\d*[\.\-\_]?[A-Za-z0-9]*)/i,
+            /Codigo[:\s]+(PP\d+[\.\-\_]?\d*[\.\-\_]?[A-Za-z0-9]*)/i,
+            
+            // Padrão: "Número:" + PP
+            /Número[:\s]+(PP\d+[\.\-\_]?\d*[\.\-\_]?[A-Za-z0-9]*)/i,
+            /Numero[:\s]+(PP\d+[\.\-\_]?\d*[\.\-\_]?[A-Za-z0-9]*)/i,
+            
+            // Padrão: PP isolado
+            /\b(PP\d+[\.\-\_]?\d*[\.\-\_]?[A-Za-z0-9]*)\b/i,
+            
+            // Padrão: PP com formato específico (PP + números + separadores)
+            /(PP\d{1,3}[\.\-\_]?\d{1,3}[\.\-\_]?[A-Za-z0-9]{2,8})/i,
+            
+            // Padrão: PP entre parênteses
+            /\(([^)]*PP\d+[\.\-\_]?\d*[\.\-\_]?[A-Za-z0-9]*[^)]*)\)/i,
+            
+            // Padrão: PP entre colchetes
+            /\[([^\]]*PP\d+[\.\-\_]?\d*[\.\-\_]?[A-Za-z0-9]*[^\]]*)\]/i,
+            
+            // Padrão: PP após "="
+            /=([^=]*PP\d+[\.\-\_]?\d*[\.\-\_]?[A-Za-z0-9]*[^=]*)/i,
+            
+            // Padrão: PP após ">"
+            />([^>]*PP\d+[\.\-\_]?\d*[\.\-\_]?[A-Za-z0-9]*[^>]*)/i,
+            
+            // NOVO: Padrão específico para confirmações do sistema
+            /🔖\s*Referência[:\s]*([A-Za-z0-9\.\-\_]+)/i,
+            
+            // NOVO: Padrão para referências após "Referência:"
+            /Referência[:\s]*([A-Za-z0-9\.\-\_]+)/i,
+            
+            // NOVO: Padrão para referências após "🔖 Referência:"
+            /🔖\s*Referência[:\s]*([A-Za-z0-9\.\-\_]+)/i
         ];
 
         for (const pattern of patterns) {
             const match = text.match(pattern);
             if (match) {
-                const referencia = this.normalizeReference(match[1]);
-                if (referencia && referencia.startsWith('PP')) {
-                    return referencia;
+                let referencia = match[1];
+                
+                // Se o padrão capturou texto extra, extrai apenas a parte PP
+                if (referencia.length > 20) {
+                    const ppMatch = referencia.match(/(PP\d+[\.\-\_]?\d*[\.\-\_]?[A-Za-z0-9]*)/i);
+                    if (ppMatch) {
+                        referencia = ppMatch[1];
+                    }
+                }
+                
+                const referenciaNormalizada = this.normalizeReference(referencia);
+                if (referenciaNormalizada && this.isValidEmolaReference(referenciaNormalizada)) {
+                    return referenciaNormalizada;
                 }
             }
         }
         return null;
+    }
+
+    // NOVA FUNÇÃO: Validação de referência M-Pesa
+    isValidMpesaReference(reference) {
+        if (!reference || reference.length < 8 || reference.length > 20) return false;
+        
+        // Deve conter pelo menos 2 letras e 2 números
+        const hasLetters = /[A-Za-z]/.test(reference);
+        const hasNumbers = /\d/.test(reference);
+        
+        if (!hasLetters || !hasNumbers) return false;
+        
+        // Verifica se não contém caracteres inválidos
+        const validChars = /^[A-Za-z0-9\.\-\_]+$/.test(reference);
+        
+        return validChars;
+    }
+
+    // NOVA FUNÇÃO: Validação de referência eMola
+    isValidEmolaReference(reference) {
+        if (!reference || !reference.startsWith('PP')) return false;
+        
+        // Deve ter pelo menos 4 caracteres (PP + pelo menos 2 caracteres)
+        if (reference.length < 4) return false;
+        
+        // Verifica se contém pelo menos um número após PP
+        const hasNumbers = /\d/.test(reference.substring(2));
+        
+        return hasNumbers;
     }
 
     extractReference(text) {
@@ -415,19 +590,34 @@ class WhatsAppBot {
                     role: "user",
                     content: [{
                         type: "text",
-                        text: "Extrai apenas a referência da transação desta imagem. M-Pesa: código após 'Confirmado'. eMola: código após 'ID da transacao:'. Responde apenas com a referência ou 'NAO_ENCONTRADA'."
+                        text: `Extrai apenas a referência da transação desta imagem. 
+
+Para M-Pesa: Procura por códigos após palavras como "Confirmado", "Referência", "ID", "Código", "Número", "Transação". Formato típico: 2-4 letras + 2-3 números + 4-12 alfanumérico.
+
+Para eMola: Procura por códigos que começam com "PP" seguidos de números e possivelmente separadores como pontos, hífens ou underscores.
+
+Responde apenas com a referência encontrada ou 'NAO_ENCONTRADA' se não encontrar nenhuma.`
                     }, {
                         type: "image_url",
                         image_url: { url: `data:${media.mimetype};base64,${media.data}` }
                     }]
                 }],
-                max_tokens: 50
+                max_tokens: 100
             });
 
             const result = response.choices[0].message.content.trim();
-            if (result !== "NAO_ENCONTRADA") {
-                // CORREÇÃO: Apenas remove ponto final, preserva formato original
-                return result.trim().replace(/\.$/, '');
+            if (result !== "NAO_ENCONTRADA" && result.length > 0) {
+                // MELHORIA: Usa o novo sistema de normalização
+                const referenciaNormalizada = this.normalizeReference(result);
+                
+                // VALIDAÇÃO: Verifica se a referência extraída é válida
+                if (this.isValidReference(referenciaNormalizada)) {
+                    this.log(`🖼️ Referência extraída de imagem: ${result} → ${referenciaNormalizada}`);
+                    return referenciaNormalizada;
+                } else {
+                    this.log(`⚠️ Referência extraída inválida: ${result} → ${referenciaNormalizada}`);
+                    return null;
+                }
             }
             return null;
         } catch (error) {
@@ -442,7 +632,18 @@ class WhatsAppBot {
             /(\d+)\s*MB/i,
             /(\d+)\s*mb/i,
             /quantidade[:\s]*(\d+)/i,
-            /valor[:\s]*(\d+)\s*MB/i
+            /valor[:\s]*(\d+)\s*MB/i,
+            
+            // NOVO: Padrão específico para confirmações do sistema
+            /📊\s*Megas[:\s]*(\d+)\s*MB/i,
+            /📊\s*Megas[:\s]*(\d+)/i,
+            
+            // NOVO: Padrão para megas após "📊 Megas:"
+            /📊\s*Megas[:\s]*(\d+)/i,
+            
+            // NOVO: Padrão para megas isolados
+            /(\d+)\s*MB/i,
+            /(\d+)\s*mb/i
         ];
 
         for (const pattern of patterns) {
@@ -627,25 +828,60 @@ class WhatsAppBot {
             }
 
             if (referencia) {
-                // CORREÇÃO: Usa a função de normalização corrigida
+                // MELHORIA: Usa o novo sistema de normalização inteligente
                 const referenciaKey = this.normalizeReference(referencia);
                 
-                this.pendingTransactions[referenciaKey] = {
-                    sender: sender,
-                    nome: nome,
-                    timestamp: Date.now(),
-                    messageId: message.id.id,
-                    groupId: groupId,
-                    originalReference: referencia
-                };
-                this.savePendingData();
-                this.log(`✅ Referência capturada: ${referencia} (normalizada: ${referenciaKey}) de ${nome} (${sender}) no grupo ${groupId}`);
-                
-                // DEBUG: Lista todas as referências pendentes
-                this.log(`📋 Referências pendentes: ${Object.keys(this.pendingTransactions).join(', ')}`);
+                // VALIDAÇÃO: Verifica se a referência é válida antes de salvar
+                if (this.isValidReference(referenciaKey)) {
+                    this.pendingTransactions[referenciaKey] = {
+                        sender: sender,
+                        nome: nome,
+                        timestamp: Date.now(),
+                        messageId: message.id.id,
+                        groupId: groupId,
+                        originalReference: referencia,
+                        referenceType: this.getReferenceType(referenciaKey)
+                    };
+                    this.savePendingData();
+                    this.log(`✅ Referência capturada: ${referencia} (normalizada: ${referenciaKey}) de ${nome} (${sender}) no grupo ${groupId}`);
+                    this.log(`📋 Tipo de referência: ${this.getReferenceType(referenciaKey)}`);
+                    
+                    // DEBUG: Lista todas as referências pendentes
+                    this.log(`📋 Referências pendentes: ${Object.keys(this.pendingTransactions).join(', ')}`);
+                } else {
+                    this.log(`⚠️ Referência inválida ignorada: ${referencia} (${referenciaKey})`);
+                }
             }
         } catch (error) {
             this.log('Erro ao processar comprovativo:', error.message);
+        }
+    }
+
+    // NOVA FUNÇÃO: Validação geral de referências
+    isValidReference(reference) {
+        if (!reference) return false;
+        
+        // Verifica se é uma referência eMola válida
+        if (this.isValidEmolaReference(reference)) {
+            return true;
+        }
+        
+        // Verifica se é uma referência M-Pesa válida
+        if (this.isValidMpesaReference(reference)) {
+            return true;
+        }
+        
+        return false;
+    }
+
+    // NOVA FUNÇÃO: Identifica o tipo de referência
+    getReferenceType(reference) {
+        if (reference.toUpperCase().startsWith('PP')) {
+            return 'eMola';
+        } else if (this.isValidMpesaReference(reference)) {
+            return 'M-Pesa';
+        } else {
+            return 'Desconhecido';
         }
     }
 
@@ -657,7 +893,7 @@ class WhatsAppBot {
             
             // TENTATIVA ADICIONAL: Busca padrões PP específicos para eMola
             if (!referencia) {
-                const ppMatches = text.match(/PP\d+[\.\w]*\d+[\.\w]*\d+/gi);
+                const ppMatches = text.match(/PP\d+[\.\-\_]*\d*[\.\-\_]*[A-Za-z0-9]*/gi);
                 if (ppMatches) {
                     referencia = ppMatches.sort((a, b) => b.length - a.length)[0];
                 }
@@ -668,7 +904,7 @@ class WhatsAppBot {
                 return;
             }
 
-            // CORREÇÃO: Normaliza a referência
+            // MELHORIA: Normaliza a referência preservando formato original
             const referenciaKey = this.normalizeReference(referencia);
             this.log(`🔍 Procurando referência: ${referencia} (normalizada: ${referenciaKey})`);
 
@@ -678,29 +914,8 @@ class WhatsAppBot {
                 return;
             }
 
-            // CORREÇÃO: Busca pela referência normalizada (apenas sem ponto final)
-            let pendingTransaction = this.pendingTransactions[referenciaKey];
-            
-            // Se não encontrar, tenta busca flexível (sem modificar maiúsculas/minúsculas)
-            if (!pendingTransaction) {
-                // Busca por referência que seja igual ignorando apenas espaços e ponto final
-                const similarKey = Object.keys(this.pendingTransactions).find(key => {
-                    const keyTrimmed = key.trim().replace(/\.$/, '');
-                    const refTrimmed = referenciaKey.trim().replace(/\.$/, '');
-                    
-                    // Verifica se são iguais (preservando maiúsculas/minúsculas)
-                    return keyTrimmed === refTrimmed;
-                });
-                
-                if (similarKey) {
-                    pendingTransaction = this.pendingTransactions[similarKey];
-                    this.log(`🔄 Referência similar encontrada: ${similarKey} para confirmação ${referencia}`);
-                    delete this.pendingTransactions[similarKey];
-                }
-            } else {
-                // Remove a transação encontrada
-                delete this.pendingTransactions[referenciaKey];
-            }
+            // MELHORIA: Sistema de matching inteligente e flexível
+            let pendingTransaction = this.findBestMatch(referenciaKey, referencia);
             
             if (!pendingTransaction) {
                 this.log(`❌ Transação pendente não encontrada para referência: ${referencia} (normalizada: ${referenciaKey})`);
@@ -714,6 +929,198 @@ class WhatsAppBot {
         } catch (error) {
             this.log('Erro ao processar confirmação:', error.message);
         }
+    }
+
+    // NOVA FUNÇÃO: Sistema de matching inteligente para referências
+    findBestMatch(referenciaKey, referenciaOriginal) {
+        // 1. Busca exata pela referência normalizada
+        if (this.pendingTransactions[referenciaKey]) {
+            const transaction = this.pendingTransactions[referenciaKey];
+            delete this.pendingTransactions[referenciaKey];
+            this.log(`✅ Match exato encontrado: ${referenciaKey}`);
+            return transaction;
+        }
+
+        // 2. Busca por similaridade (ignorando diferenças mínimas)
+        const bestMatch = this.findSimilarMatch(referenciaKey, referenciaOriginal);
+        if (bestMatch) {
+            return bestMatch;
+        }
+
+        // 3. Busca por padrões específicos (M-Pesa vs eMola)
+        return this.findPatternMatch(referenciaKey, referenciaOriginal);
+    }
+
+    // NOVA FUNÇÃO: Busca por similaridade inteligente
+    findSimilarMatch(referenciaKey, referenciaOriginal) {
+        const candidates = [];
+        
+        Object.keys(this.pendingTransactions).forEach(key => {
+            const similarity = this.calculateSimilarity(referenciaKey, key);
+            if (similarity >= 0.8) { // 80% de similaridade
+                candidates.push({
+                    key: key,
+                    similarity: similarity,
+                    transaction: this.pendingTransactions[key]
+                });
+            }
+        });
+
+        if (candidates.length === 0) return null;
+
+        // Ordena por similaridade e seleciona o melhor
+        candidates.sort((a, b) => b.similarity - a.similarity);
+        const bestMatch = candidates[0];
+
+        // Remove a transação encontrada
+        delete this.pendingTransactions[bestMatch.key];
+        
+        this.log(`🔄 Match por similaridade (${Math.round(bestMatch.similarity * 100)}%): ${bestMatch.key} para ${referenciaKey}`);
+        return bestMatch.transaction;
+    }
+
+    // NOVA FUNÇÃO: Cálculo de similaridade entre referências
+    calculateSimilarity(ref1, ref2) {
+        if (ref1 === ref2) return 1.0;
+        
+        const len1 = ref1.length;
+        const len2 = ref2.length;
+        const maxLen = Math.max(len1, len2);
+        
+        if (maxLen === 0) return 1.0;
+        
+        // Calcula distância de Levenshtein
+        const distance = this.levenshteinDistance(ref1, ref2);
+        const similarity = 1 - (distance / maxLen);
+        
+        // Bônus para referências que começam igual
+        if (ref1.charAt(0) === ref2.charAt(0)) {
+            const commonPrefix = this.getCommonPrefix(ref1, ref2);
+            const prefixBonus = commonPrefix / maxLen * 0.2;
+            return Math.min(1.0, similarity + prefixBonus);
+        }
+        
+        return similarity;
+    }
+
+    // NOVA FUNÇÃO: Distância de Levenshtein para cálculo de similaridade
+    levenshteinDistance(str1, str2) {
+        const matrix = [];
+        
+        for (let i = 0; i <= str2.length; i++) {
+            matrix[i] = [i];
+        }
+        
+        for (let j = 0; j <= str1.length; j++) {
+            matrix[0][j] = j;
+        }
+        
+        for (let i = 1; i <= str2.length; i++) {
+            for (let j = 1; j <= str1.length; j++) {
+                if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+                    matrix[i][j] = matrix[i - 1][j - 1];
+                } else {
+                    matrix[i][j] = Math.min(
+                        matrix[i - 1][j - 1] + 1,
+                        matrix[i][j - 1] + 1,
+                        matrix[i - 1][j] + 1
+                    );
+                }
+            }
+        }
+        
+        return matrix[str2.length][str1.length];
+    }
+
+    // NOVA FUNÇÃO: Obtém prefixo comum entre duas strings
+    getCommonPrefix(str1, str2) {
+        let commonLength = 0;
+        const minLength = Math.min(str1.length, str2.length);
+        
+        for (let i = 0; i < minLength; i++) {
+            if (str1.charAt(i) === str2.charAt(i)) {
+                commonLength++;
+            } else {
+                break;
+            }
+        }
+        
+        return commonLength;
+    }
+
+    // NOVA FUNÇÃO: Busca por padrões específicos
+    findPatternMatch(referenciaKey, referenciaOriginal) {
+        // Verifica se é uma referência eMola (PP)
+        if (referenciaKey.toUpperCase().startsWith('PP')) {
+            return this.findEmolaPatternMatch(referenciaKey);
+        }
+        
+        // Verifica se é uma referência M-Pesa
+        return this.findMpesaPatternMatch(referenciaKey);
+    }
+
+    // NOVA FUNÇÃO: Busca por padrões eMola
+    findEmolaPatternMatch(referenciaKey) {
+        const ppPattern = /^PP\d+/i;
+        
+        for (const key of Object.keys(this.pendingTransactions)) {
+            if (ppPattern.test(key)) {
+                // Verifica se os números principais são similares
+                const keyNumbers = key.match(/\d+/g) || [];
+                const refNumbers = referenciaKey.match(/\d+/g) || [];
+                
+                if (this.arraysAreSimilar(keyNumbers, refNumbers)) {
+                    const transaction = this.pendingTransactions[key];
+                    delete this.pendingTransactions[key];
+                    this.log(`🔄 Match por padrão eMola: ${key} para ${referenciaKey}`);
+                    return transaction;
+                }
+            }
+        }
+        
+        return null;
+    }
+
+    // NOVA FUNÇÃO: Busca por padrões M-Pesa
+    findMpesaPatternMatch(referenciaKey) {
+        // Para M-Pesa, busca por referências com estrutura similar
+        for (const key of Object.keys(this.pendingTransactions)) {
+            if (!key.toUpperCase().startsWith('PP')) {
+                // Verifica se têm estrutura similar (letras + números)
+                const keyStructure = this.getReferenceStructure(key);
+                const refStructure = this.getReferenceStructure(referenciaKey);
+                
+                if (keyStructure === refStructure) {
+                    const transaction = this.pendingTransactions[key];
+                    delete this.pendingTransactions[key];
+                    this.log(`🔄 Match por padrão M-Pesa: ${key} para ${referenciaKey}`);
+                    return transaction;
+                }
+            }
+        }
+        
+        return null;
+    }
+
+    // NOVA FUNÇÃO: Obtém estrutura de uma referência (L=letra, N=número)
+    getReferenceStructure(reference) {
+        return reference
+            .split('')
+            .map(char => /[A-Za-z]/.test(char) ? 'L' : /\d/.test(char) ? 'N' : 'S')
+            .join('');
+    }
+
+    // NOVA FUNÇÃO: Verifica se arrays de números são similares
+    arraysAreSimilar(arr1, arr2) {
+        if (arr1.length !== arr2.length) return false;
+        
+        for (let i = 0; i < arr1.length; i++) {
+            if (Math.abs(parseInt(arr1[i]) - parseInt(arr2[i])) > 1) {
+                return false;
+            }
+        }
+        
+        return true;
     }
 
     async processPurchase(pendingTransaction, megas, message, referenciaConfirmacao) {
@@ -859,7 +1266,7 @@ class WhatsAppBot {
         }
     }
 
-    // NOVO: Comando de debug para verificar o estado do bot
+    // FUNÇÃO MELHORADA: Comando de debug com informações detalhadas do sistema de referências
     async sendDebugInfo(message, groupId) {
         try {
             const pendingCount = Object.keys(this.pendingTransactions).length;
@@ -873,21 +1280,43 @@ class WhatsAppBot {
             
             if (pendingCount > 0) {
                 debugText += `📋 **Referências pendentes:**\n`;
-                Object.keys(this.pendingTransactions).slice(0, 5).forEach(ref => {
+                
+                // Agrupa por tipo de referência
+                const byType = {};
+                Object.keys(this.pendingTransactions).forEach(ref => {
                     const transaction = this.pendingTransactions[ref];
-                    const timeAgo = Math.floor((Date.now() - transaction.timestamp) / 1000 / 60);
-                    debugText += `   • ${ref} (${transaction.nome}, ${timeAgo}min)\n`;
+                    const type = transaction.referenceType || 'Desconhecido';
+                    if (!byType[type]) byType[type] = [];
+                    byType[type].push({ ref, transaction });
                 });
                 
-                if (pendingCount > 5) {
-                    debugText += `   ... e mais ${pendingCount - 5}\n`;
+                Object.entries(byType).forEach(([type, refs]) => {
+                    debugText += `   📌 **${type}:**\n`;
+                    refs.slice(0, 3).forEach(({ ref, transaction }) => {
+                        const timeAgo = Math.floor((Date.now() - transaction.timestamp) / 1000 / 60);
+                        debugText += `      • ${ref} (${transaction.nome}, ${timeAgo}min)\n`;
+                    });
+                    if (refs.length > 3) {
+                        debugText += `      ... e mais ${refs.length - 3}\n`;
+                    }
+                });
+                
+                if (pendingCount > 10) {
+                    debugText += `\n📊 **Total:** ${pendingCount} transações pendentes\n`;
                 }
             }
+            
+            debugText += `\n🔍 **Sistema de Referências:**\n`;
+            debugText += `   • Padrões M-Pesa: 25+ formatos suportados\n`;
+            debugText += `   • Padrões eMola: 15+ formatos suportados\n`;
+            debugText += `   • Normalização: SEMPRE ignora último ponto\n`;
+            debugText += `   • Matching inteligente: Similaridade + padrões\n`;
+            debugText += `   • Validação automática: Formato + estrutura\n`;
             
             debugText += `\n⏰ **Hora do sistema:** ${new Date().toLocaleString('pt-BR')}`;
             
             await message.reply(debugText);
-            this.log(`🔧 Debug enviado para o grupo ${groupId}`);
+            this.log(`🔧 Debug detalhado enviado para o grupo ${groupId}`);
 
         } catch (error) {
             this.log('Erro ao enviar debug:', error.message);
@@ -1388,11 +1817,146 @@ class WhatsAppBot {
             this.log('🛡️ Sistema anti-spam ativo: 5 mensagens idênticas em 1 minuto');
             this.log('🇲🇿 Proteção automática: Remove números não moçambicanos (+258)');
             this.log('🧹 Limpeza automática: Transações pendentes antigas são removidas a cada 10 minutos');
-            this.log('🔧 Sistema de referências corrigido: Preserva formato original das referências');
+            
+            // NOVAS FUNCIONALIDADES DO SISTEMA DE REFERÊNCIAS
+            this.log('🔍 SISTEMA DE REFERÊNCIAS AVANÇADO:');
+            this.log('   • 25+ padrões M-Pesa suportados (Confirmado, Referência, ID, Código, etc.)');
+            this.log('   • 15+ padrões eMola suportados (PP + números + separadores)');
+            this.log('   • Normalização CORRIGIDA: SEMPRE ignora o último ponto');
+            this.log('   • Validação automática: Formato + estrutura + tipo');
+            this.log('   • Matching inteligente: Exato + similaridade + padrões');
+            this.log('   • Algoritmo de Levenshtein para cálculo de similaridade');
+            this.log('   • Análise de estrutura (L=letra, N=número, S=símbolo)');
+            this.log('   • Suporte a separadores: pontos, hífens, underscores');
+            this.log('   • Integração OpenAI melhorada para análise de imagens');
+            
+            // TESTE DE NORMALIZAÇÃO
+            this.log('\n🧪 TESTE DE NORMALIZAÇÃO:');
+            this.testNormalization();
+            
+            // TESTE DE EXEMPLOS REAIS
+            this.log('\n🧪 TESTE DE EXEMPLOS REAIS:');
+            this.testRealExamples();
             
         } catch (error) {
             this.log('❌ Erro no teste do bot:', error.message);
         }
+    }
+
+    // NOVA FUNÇÃO: Teste de matching com exemplos reais
+    testRealExamples() {
+        this.log('\n🧪 TESTE DE EXEMPLOS REAIS:');
+        
+        // Simula transações pendentes (comprovativos)
+        const pendingTransactions = {
+            'PP250820.1925.P55378': {
+                sender: '841417347',
+                nome: 'NATACHA ALICE TIMANA',
+                timestamp: Date.now() - 300000, // 5 minutos atrás
+                messageId: 'msg1',
+                groupId: 'test-group',
+                originalReference: 'PP250820.1925.P55378',
+                referenceType: 'eMola'
+            },
+            'CHK7H3PXRNJ': {
+                sender: '856070113',
+                nome: 'NATACHA',
+                timestamp: Date.now() - 600000, // 10 minutos atrás
+                messageId: 'msg2',
+                groupId: 'test-group',
+                originalReference: 'CHK7H3PXRNJ',
+                referenceType: 'M-Pesa'
+            },
+            'PP250820.1350.k93393': {
+                sender: '841417347',
+                nome: 'NATACHA ALICE TIMANA',
+                timestamp: Date.now() - 900000, // 15 minutos atrás
+                messageId: 'msg3',
+                groupId: 'test-group',
+                originalReference: 'PP250820.1350.k93393',
+                referenceType: 'eMola'
+            },
+            'PP250820.1337.h52287': {
+                sender: '855429098',
+                nome: 'NATACHA ALICE TIMANA',
+                timestamp: Date.now() - 1200000, // 20 minutos atrás
+                messageId: 'msg4',
+                groupId: 'test-group',
+                originalReference: 'PP250820.1337.h52287',
+                referenceType: 'eMola'
+            }
+        };
+        
+        // Simula confirmações
+        const confirmations = [
+            {
+                text: '✅ Transação Concluída Com Sucesso\n\n📱 Número: 855429098\n📊 Megas: 1024 MB\n🔖 Referência: PP250820.1337.h52287\n⏰ Data/Hora: 20-08-25 às 13.40\n\nTransferencia Processada Automaticamente Pelo Sistema',
+                expectedRef: 'PP250820.1337.h52287',
+                expectedMegas: 1024
+            },
+            {
+                text: '✅ Transação Concluída Com Sucesso\n\n📱 Número: 846518049\n📊 Megas: 1024 MB\n🔖 Referência: PP250820.1713.Q66348\n⏰ Data/Hora: 20-08-25 às 17.14\n\nTransferencia Processada Automaticamente Pelo Sistema',
+                expectedRef: 'PP250820.1713.Q66348',
+                expectedMegas: 1024
+            },
+            {
+                text: '✅ Transação Concluída Com Sucesso\n\n📱 Número: 846518019\n📊 Megas: 1024 MB\n🔖 Referência: PP250820.1707.R22988\n⏰ Data/Hora: 20-08-25 às 17.10\n\nTransferencia Processada Automaticamente Pelo Sistema',
+                expectedRef: 'PP250820.1707.R22988',
+                expectedMegas: 1024
+            }
+        ];
+        
+        // Testa extração de referências
+        this.log('\n📋 TESTE DE EXTRAÇÃO DE REFERÊNCIAS:');
+        confirmations.forEach((conf, index) => {
+            const extractedRef = this.extractReference(conf.text);
+            const extractedMegas = this.extractMegas(conf.text);
+            const normalizedRef = this.normalizeReference(extractedRef);
+            
+            this.log(`\n   Confirmação ${index + 1}:`);
+            this.log(`   Texto: ${conf.text.substring(0, 100)}...`);
+            this.log(`   Referência extraída: ${extractedRef}`);
+            this.log(`   Referência normalizada: ${normalizedRef}`);
+            this.log(`   Megas extraídas: ${extractedMegas}`);
+            this.log(`   Esperado: ${conf.expectedRef} / ${conf.expectedMegas}MB`);
+            this.log(`   ✅ Extração: ${extractedRef === conf.expectedRef ? 'CORRETA' : 'INCORRETA'}`);
+            this.log(`   ✅ Megas: ${extractedMegas === conf.expectedMegas ? 'CORRETAS' : 'INCORRETAS'}`);
+        });
+        
+        // Testa matching
+        this.log('\n🔍 TESTE DE MATCHING:');
+        this.pendingTransactions = { ...pendingTransactions };
+        
+        confirmations.forEach((conf, index) => {
+            const extractedRef = this.extractReference(conf.text);
+            if (extractedRef) {
+                const normalizedRef = this.normalizeReference(extractedRef);
+                const match = this.findBestMatch(normalizedRef, extractedRef);
+                
+                this.log(`\n   Confirmação ${index + 1} (${extractedRef}):`);
+                if (match) {
+                    this.log(`   ✅ MATCH ENCONTRADO: ${match.nome} (${match.sender})`);
+                    this.log(`   📱 Número: ${match.sender}`);
+                    this.log(`   👤 Nome: ${match.nome}`);
+                    this.log(`   📋 Tipo: ${match.referenceType}`);
+
+                    // Simula mensagem personalizada
+                    const megas = this.extractMegas(conf.text);
+                    if (megas) {
+                        const phoneNumber = `+258${match.sender}`;
+                        const posicao = 1; // Simula posição
+                        const mensagem = this.generatePersonalizedMessage(phoneNumber, megas, megas, posicao, match.nome, 'test-group');
+                        this.log(`   💬 Mensagem simulada: ${mensagem.substring(0, 100)}...`);
+                    }
+                } else {
+                    this.log(`   ❌ NENHUM MATCH ENCONTRADO`);
+                    this.log(`   📋 Referências pendentes: ${Object.keys(this.pendingTransactions).join(', ')}`);
+                }
+            }
+        });
+        
+        // Restaura estado original
+        this.pendingTransactions = {};
     }
 }
 
